@@ -5,72 +5,77 @@ import './App.scss'
 import * as THREE from 'three'
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader"
+import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader"
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 
 const App = () => {
 
-  function createRender(domElement: HTMLElement) {
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 10)
-    camera.position.z = 1
+  let camera: THREE.PerspectiveCamera
+  let scene: THREE.Scene
+  let renderer: THREE.WebGLRenderer
+  let clock: THREE.Clock
+  let model: THREE.Group
+  let mixer: THREE.AnimationMixer
+  const actions: Record<string, THREE.AnimationAction> = {}
 
-    const scene = new THREE.Scene()
+  function init() {
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.25, 100)
+    camera.position.set(- 5, 3, 10)
+    camera.lookAt(new THREE.Vector3(0, 2, 0))
 
-    const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2)
+    scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x282C34)
+    // scene.fog = new THREE.Fog(0xe0e0e0, 20, 12)
 
-    const material = new THREE.MeshLambertMaterial({
-      color: 0xff0000
-    })
+    clock = new THREE.Clock()
 
-    const mesh = new THREE.Mesh(geometry, material)
+
+    // lights
+    // const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444)
+    // hemiLight.position.set(0, 20, 0)
+    // scene.add(hemiLight)
+
+    const dirLight = new THREE.DirectionalLight(0xffffff)
+    dirLight.position.set(0, 20, 10)
+    scene.add(dirLight)
+
+    // ground
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshPhongMaterial({ color: 0x3C3C3C, depthWrite: false }))
+    mesh.rotation.x = - Math.PI / 2
     scene.add(mesh)
 
-    const point = new THREE.PointLight(0xffffff)
-    point.position.set(400, 200, 300)
-    scene.add(point)
+    const grid = new THREE.GridHelper(20, 40, 0x484848, 0x484848)
+    scene.add(grid)
 
-    const ambient = new THREE.AmbientLight(0x404040)
-    scene.add(ambient)
+    // model
 
-    const loader = new OBJLoader();
+    const loader = new GLTFLoader()
+    loader.load(new URL('./models/RobotExpressive.glb', import.meta.url).href, (gltf) => {
 
-    // load a resource
-    loader.load(
-      // resource URL
-      new URL('./azhe.obj', import.meta.url).href,
-      // called when resource is loaded
-      function (object) {
+      model = gltf.scene
+      scene.add(model)
 
-        scene.add(object);
+      renderer.render(scene, camera)
 
-      },
-      // called when loading is in progresses
-      function (xhr) {
+      createAnimation(model, gltf.animations)
 
-        console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+    }, undefined, (e) => {
 
-      },
-      // called when loading has errors
-      function (error) {
+      console.error(e)
 
-        console.log('An error happened');
-
-      }
-    );
+    })
 
 
     const axesHelper = new THREE.AxesHelper(5)
     scene.add(axesHelper)
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setPixelRatio(window.devicePixelRatio)
     renderer.setSize(window.innerWidth, window.innerHeight)
-    renderer.setAnimationLoop(animation)
-    renderer.setClearColor(0x282c34, 1)
-    domElement.appendChild(renderer.domElement)
+    renderer.outputEncoding = THREE.sRGBEncoding
+    document.querySelector('.App')!.appendChild(renderer.domElement)
 
-    function animation(time: number) {
-      mesh.rotation.x = time / 2000
-      mesh.rotation.y = time / 1000
-      renderer.render(scene, camera)
-    }
+    renderer.render(scene, camera)
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.addEventListener('change', () => {
@@ -78,13 +83,42 @@ const App = () => {
     })
   }
 
+  function createAnimation(model: THREE.Group, animations: THREE.AnimationClip[]) {
+    mixer = new THREE.AnimationMixer(model)
+
+    for (let i = 0; i < animations.length; i++) {
+      const clip = animations[i]
+      const action = mixer.clipAction(clip)
+      actions[clip.name] = action
+
+      action.clampWhenFinished = true
+      action.loop = THREE.LoopOnce
+    }
+  }
+
+  function animate() {
+    const dt = clock.getDelta()
+    if (mixer) mixer.update(dt)
+    requestAnimationFrame(animate)
+    renderer.render(scene, camera)
+  }
+
+  function dance() {
+    actions['Sitting'].time = 2
+    // if (actions['Sitting'].paused) {
+    //   actions['Sitting'].stop()
+    // }
+    // actions['Sitting'].play()
+  }
+
   useEffect(() => {
-    createRender(document.querySelector('.App')!)
+    init()
+    animate()
   }, [])
 
   return (
     <div className="App">
-      <img src={logo} className="App-logo" alt="logo" />
+      <img src={logo} className="App-logo" alt="logo" onClick={dance} />
     </div>
   )
 }
