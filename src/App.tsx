@@ -4,48 +4,50 @@ import './App.scss'
 
 import * as THREE from 'three'
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader"
-import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader"
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
-import GUI, { Controller } from 'lil-gui'
 import Stats from 'stats.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 
 export type ActionsType = Record<string, {
   weight: number,
   action?: THREE.AnimationAction
 }>
 
+
 const App = () => {
 
   let camera: THREE.PerspectiveCamera
   let scene: THREE.Scene
   let renderer: THREE.WebGLRenderer
+  let controls: OrbitControls
+
+  let currentIntersectObject: THREE.Mesh<THREE.BoxGeometry, THREE.MeshPhongMaterial> | undefined
+
+  let stats: Stats
+
+  let raycaster: THREE.Raycaster
+
   let clock: THREE.Clock
   let model: THREE.Group
   let mixer: THREE.AnimationMixer
-
   let numAnimations: number
-
-  const allActions: THREE.AnimationAction[] = []
-
   const additiveActions: ActionsType = {
     sneak_pose: { weight: 0 },
     sad_pose: { weight: 0 },
     agree: { weight: 0 },
     headShake: { weight: 0 }
   }
+  let skeleton: THREE.SkeletonHelper
 
-  let stats: Stats
-  let panelSettings: Record<string, number | (() => void)>
+  const allActions: THREE.AnimationAction[] = []
 
   function init() {
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100)
-    camera.position.set(-3, 3, 3)
-
     scene = new THREE.Scene()
     scene.background = new THREE.Color(0x282C34)
 
-    clock = new THREE.Clock()
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100)
+    camera.position.set(-3, 3, 3)
+
+    raycaster = new THREE.Raycaster()
 
     // lights
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444)
@@ -54,18 +56,27 @@ const App = () => {
 
     const dirLight = new THREE.DirectionalLight(0xffffff)
     dirLight.position.set(3, 10, 10)
-    dirLight.castShadow = true
-    dirLight.shadow.camera.top = 2
-    dirLight.shadow.camera.bottom = - 2
-    dirLight.shadow.camera.left = - 2
-    dirLight.shadow.camera.right = 2
-    dirLight.shadow.camera.near = 0.1
-    dirLight.shadow.camera.far = 40
     scene.add(dirLight)
 
     const grid = new THREE.GridHelper(20, 40, 0x484848, 0x484848)
     scene.add(grid)
 
+    const axesHelper = new THREE.AxesHelper(5)
+    scene.add(axesHelper)
+
+    renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.setSize(window.innerWidth, window.innerHeight)
+    renderer.outputEncoding = THREE.sRGBEncoding
+    renderer.shadowMap.enabled = true;
+    document.querySelector('.App')!.appendChild(renderer.domElement)
+
+    stats = new Stats()
+    document.querySelector('.App')!.appendChild(stats.dom);
+
+    window.addEventListener('resize', onWindowResize)
+
+    clock = new THREE.Clock()
     // model
     const loader = new GLTFLoader()
     loader.load(new URL('./models/Xbot.glb', import.meta.url).href, (gltf) => {
@@ -73,8 +84,23 @@ const App = () => {
       model = gltf.scene
       scene.add(model)
 
-      const skeleton = new THREE.SkeletonHelper(model)
+      model.position.set(0, 0, 0)
+
+      skeleton = new THREE.SkeletonHelper(model)
+      console.log('[ qwk-log ] ~ skeleton', skeleton.bones)
       skeleton.visible = true
+
+      // setInterval(() => {
+      //   const sk1 = skeleton.bones.find(x => x.name.includes('LeftLeg'))!
+      //   sk1.position.x = 1
+      //   // sk1.position.y = 0
+      //   // sk1.position.z = 0
+
+      //   const { x, y, z } = sk1.position
+
+      //   addCube(0, 0, 0)
+      // }, 100)
+
       scene.add(skeleton)
 
       const animations = gltf.animations
@@ -108,40 +134,33 @@ const App = () => {
 
       }
 
-      createPanel()
-
-      animate()
-
       renderer.render(scene, camera)
 
     }, undefined, (e) => {
       console.error(e)
     })
 
-
-    const axesHelper = new THREE.AxesHelper(5)
-    scene.add(axesHelper)
-
-    renderer = new THREE.WebGLRenderer({ antialias: true })
-    renderer.setPixelRatio(window.devicePixelRatio)
-    renderer.setSize(window.innerWidth, window.innerHeight)
-    renderer.outputEncoding = THREE.sRGBEncoding
-    renderer.shadowMap.enabled = true;
-    document.querySelector('.App')!.appendChild(renderer.domElement)
-
-    renderer.render(scene, camera)
-
-    const controls = new OrbitControls(camera, renderer.domElement)
+    controls = new OrbitControls(camera, renderer.domElement)
     controls.target.set(0, 1, 0)
     controls.update()
     controls.addEventListener('change', () => {
       renderer.render(scene, camera)
     })
 
-    stats = new Stats();
-    document.querySelector('.App')!.appendChild(stats.dom);
+    function animate() {
 
-    window.addEventListener('resize', onWindowResize)
+      requestAnimationFrame(animate)
+
+      if (mixer) {
+        const mixerUpdateDelta = clock.getDelta()
+        mixer.update(mixerUpdateDelta)
+      }
+      stats.update()
+
+      renderer.render(scene, camera)
+    }
+
+    animate()
   }
 
   function activateAction(action: THREE.AnimationAction) {
@@ -157,58 +176,99 @@ const App = () => {
     action.setEffectiveWeight(weight)
   }
 
+
   function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight
     camera.updateProjectionMatrix()
     renderer.setSize(window.innerWidth, window.innerHeight)
   }
 
-  function createPanel() {
-    const panel = new GUI({ width: 310 })
-    const folder = panel.addFolder('Additive Action Weights')
+  const intersectObjects: THREE.Mesh<THREE.BoxGeometry, THREE.MeshPhongMaterial>[] = []
 
-    panelSettings = {}
 
-    for (const name of Object.keys(additiveActions)) {
+  function addCube(x: number, y: number, z: number) {
+    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1)
+    const material = new THREE.MeshPhongMaterial({
+      color: 0xC7FFFF
+    })
 
-      const settings = additiveActions[name];
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.set(x, y, z)
+    scene.add(mesh)
 
-      panelSettings[name] = settings.weight;
-
-      folder.add(panelSettings, name, 0.0, 4.0, 0.01).listen().onChange(function (weight: number) {
-
-        setWeight(settings.action!, weight)
-        settings.weight = weight
-
-      })
-
-    }
-
-    folder.open();
+    intersectObjects.push(mesh)
   }
 
-  function animate() {
-
-    // Render loop
-
-    requestAnimationFrame(animate);
-
-    // Get the time elapsed since the last frame, used for mixer update
-
-    const mixerUpdateDelta = clock.getDelta();
-
-    // Update the animation mixer, the stats panel, and render this frame
-
-    mixer.update(mixerUpdateDelta);
-
-    stats.update();
-
-    renderer.render(scene, camera);
-
-  }
 
   useEffect(() => {
     init()
+
+
+
+    console.log('qwk', skeleton)
+
+    addCube(1, 1, 0)
+
+
+    const raycaster = new THREE.Raycaster()
+    const mouse = new THREE.Vector2()
+
+    renderer.domElement.addEventListener('mousedown', event => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
+      raycaster.setFromCamera(mouse, camera)
+      const intersects = raycaster.intersectObjects(intersectObjects, true)
+
+      if (intersects.length > 0) {
+        const object = intersects[0].object as THREE.Mesh<THREE.BoxGeometry, THREE.MeshPhongMaterial>
+
+        currentIntersectObject = object
+
+        object.material.color.set(0xff0000)
+
+        // object.scale.multiplyScalar(0.9)
+
+      } else {
+        currentIntersectObject && currentIntersectObject.material.color.set(0xffffff)
+        currentIntersectObject = undefined
+      }
+    })
+
+    document.addEventListener('wheel', (event) => {
+      if (currentIntersectObject) {
+        // const scaleFactor = 0.001
+        // const scale = 1 + (event as any).wheelDelta * scaleFactor
+        // intersectObjects[0].scale.multiplyScalar(scale)
+
+
+      }
+    })
+
+    let lastX: number | null = null;
+    renderer.domElement.addEventListener("mousedown", (event) => {
+      lastX = event.clientX
+      if (currentIntersectObject) {
+        controls.enabled = false
+      }
+    })
+
+    renderer.domElement.addEventListener("mousemove", (event) => {
+      if (lastX && currentIntersectObject) {
+        let delta = event.clientX - lastX
+        intersectObjects[0].rotateY(delta * 0.01)
+
+        const RightUpLeg = skeleton.bones.find(x => x.name.includes('RightHandThumb2'))!
+        // RightUpLeg.rotation.x = delta * 0.01
+        // RightUpLeg.rotation.y = delta * 0.01
+        RightUpLeg.rotation.z = delta * 0.01
+      }
+    })
+
+    renderer.domElement.addEventListener("mouseup", (event) => {
+      lastX = null
+      controls.enabled = true
+    })
+
   }, [])
 
   return (
