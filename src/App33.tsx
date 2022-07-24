@@ -79,16 +79,16 @@ const App = () => {
     clock = new THREE.Clock()
     // model
     const loader = new GLTFLoader()
-    loader.load(new URL('./models/Xbot.glb', import.meta.url).href, (gltf) => {
+    loader.load(new URL('./models/untitled.glb', import.meta.url).href, (gltf) => {
 
       model = gltf.scene
+      console.log('[ qwk-log ] ~ model', model)
       scene.add(model)
 
       model.position.set(0, 0, 0)
-      model.rotateY(Math.PI/4)
 
       skeleton = new THREE.SkeletonHelper(model)
-
+      console.log('[ qwk-log ] ~ skeleton', skeleton.bones)
       skeleton.visible = true
 
       // setInterval(() => {
@@ -109,44 +109,7 @@ const App = () => {
 
       numAnimations = animations.length
 
-      for (let i = 0; i !== numAnimations; ++i) {
-
-        let clip = animations[i]
-        const name = clip.name
-
-        if (additiveActions[name]) {
-
-          // Make the clip additive and remove the reference frame
-
-          THREE.AnimationUtils.makeClipAdditive(clip)
-
-          if (clip.name.endsWith('_pose')) {
-
-            clip = THREE.AnimationUtils.subclip(clip, clip.name, 2, 3, 30)
-
-          }
-
-          const action = mixer.clipAction(clip)
-          activateAction(action)
-          additiveActions[name].action = action
-          allActions.push(action)
-
-        }
-
-      }
-
       renderer.render(scene, camera)
-
-      if (skeleton) {
-        skeleton.bones.forEach(e => {
-          const x = e.matrixWorld.elements.at(-2)!
-          const y = e.matrixWorld.elements.at(-3)!
-          const z = e.matrixWorld.elements.at(-4)!
-          console.log('qwk', x, y, z)
-          addCube(x, y, z)
-        });
-      }
-
 
     }, undefined, (e) => {
       console.error(e)
@@ -175,20 +138,6 @@ const App = () => {
     animate()
   }
 
-  function activateAction(action: THREE.AnimationAction) {
-    const clip = action.getClip()
-    const settings = additiveActions[clip.name]
-    setWeight(action, settings.weight)
-    action.play()
-  }
-
-  function setWeight(action: THREE.AnimationAction, weight: number) {
-    action.enabled = true
-    action.setEffectiveTimeScale(1)
-    action.setEffectiveWeight(weight)
-  }
-
-
   function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight
     camera.updateProjectionMatrix()
@@ -199,7 +148,7 @@ const App = () => {
 
 
   function addCube(x: number, y: number, z: number) {
-    const geometry = new THREE.BoxGeometry(0.08, 0.08, 0.08)
+    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1)
     const material = new THREE.MeshPhongMaterial({
       color: 0xC7FFFF
     })
@@ -219,8 +168,7 @@ const App = () => {
 
     console.log('qwk', skeleton)
 
-
-    // addCube(1, 1, 0)
+    addCube(0.5, 0.5, -0.5)
 
 
     const raycaster = new THREE.Raycaster()
