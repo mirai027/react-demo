@@ -37,6 +37,7 @@ const App = () => {
     headShake: { weight: 0 }
   }
   let skeleton: THREE.SkeletonHelper
+  let currentObjectName: string
 
   const allActions: THREE.AnimationAction[] = []
 
@@ -85,9 +86,10 @@ const App = () => {
       scene.add(model)
 
       model.position.set(0, 0, 0)
-      model.rotateY(Math.PI/4)
+      model.rotateY(-Math.PI / 4)
 
       skeleton = new THREE.SkeletonHelper(model)
+      console.log('[ qwk-log ] ~ skeleton', skeleton)
 
       skeleton.visible = true
 
@@ -142,8 +144,8 @@ const App = () => {
           const x = e.matrixWorld.elements.at(-2)!
           const y = e.matrixWorld.elements.at(-3)!
           const z = e.matrixWorld.elements.at(-4)!
-          console.log('qwk', x, y, z)
-          addCube(x, y, z)
+          console.log('[ qwk-log ] ~ e', e)
+          addCube(x, y, z, e.name)
         });
       }
 
@@ -198,14 +200,19 @@ const App = () => {
   const intersectObjects: THREE.Mesh<THREE.BoxGeometry, THREE.MeshPhongMaterial>[] = []
 
 
-  function addCube(x: number, y: number, z: number) {
-    const geometry = new THREE.BoxGeometry(0.08, 0.08, 0.08)
+  function addCube(x: number, y: number, z: number, name: string, type: 'add' | 'set', mesh2?: THREE.Mesh<THREE.BoxGeometry, THREE.MeshPhongMaterial>) {
+    if (type === 'set' && mesh2) {
+      mesh2.position.set(x, y, z)
+      return
+    }
+    const geometry = new THREE.BoxGeometry(0.05, 0.05, 0.05)
     const material = new THREE.MeshPhongMaterial({
       color: 0xC7FFFF
     })
 
     const mesh = new THREE.Mesh(geometry, material)
     mesh.position.set(x, y, z)
+    mesh.name = name
     scene.add(mesh)
 
     intersectObjects.push(mesh)
@@ -239,6 +246,8 @@ const App = () => {
 
         object.material.color.set(0xff0000)
 
+        currentObjectName = object.name
+
         // object.scale.multiplyScalar(0.9)
 
       } else {
@@ -270,7 +279,7 @@ const App = () => {
         let delta = event.clientX - lastX
         intersectObjects[0].rotateY(delta * 0.01)
 
-        const RightUpLeg = skeleton.bones.find(x => x.name.includes('RightHandThumb2'))!
+        const RightUpLeg = skeleton.bones.find(x => x.name.includes(currentObjectName))!
         // RightUpLeg.rotation.x = delta * 0.01
         // RightUpLeg.rotation.y = delta * 0.01
         RightUpLeg.rotation.z = delta * 0.01
@@ -280,6 +289,16 @@ const App = () => {
     renderer.domElement.addEventListener("mouseup", (event) => {
       lastX = null
       controls.enabled = true
+
+      if (skeleton) {
+        skeleton.bones.forEach((e, i) => {
+          const x = e.matrixWorld.elements.at(-2)!
+          const y = e.matrixWorld.elements.at(-3)!
+          const z = e.matrixWorld.elements.at(-4)!
+          console.log('qwk', intersectObjects[i])
+          addCube(x, y, z, '', 'set', intersectObjects[i])
+        });
+      }
     })
 
   }, [])
